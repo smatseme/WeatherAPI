@@ -1,0 +1,200 @@
+﻿@page "/capture"
+@using WeatherApp.Data.Models
+@using WeatherApp.Services.Interfaces
+@using CsvHelper
+@using System.Globalization
+
+@rendermode InteractiveServer
+@inject IWeather WeatherService
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavManager
+@inject IToastService ToatService
+
+
+<h3>Capture new weather readings</h3>
+
+<form class="capture-form mt-5">
+    <input hidden @bind="weather.Id"/>
+    <input hidden @bind="weather.TimeStamp"/>
+    <div class="form-group mb-3 bg-dark">
+        <label>Latitude</label>
+        <input class="form-control bg-dark text-white" id="latitude" @bind="@weather.Longitude" />
+    </div>
+    <div class="form-group mb-3">
+        <label>Longitude</label>
+        <input class="form-control bg-dark text-white" id="longitude" @bind="@weather.Longitude" />
+    </div>
+
+    <div class="form-group mb-3">
+        <label>Temperature</label>
+        <input class="form-control bg-dark text-white" @bind="@weather.Temperature" />
+    </div>
+    <div class="form-group mb-3">
+        <label>Feels Like</label>
+        <input class="form-control bg-dark text-white" @bind="@weather.FeelLikeTemp" />
+    </div>
+
+    <div class="form-group mb-3">
+        <label>Conditions</label>
+        <input class="form-control bg-dark text-white" @bind="@weather.Conditions" />
+    </div>
+    <div class="form-group mb-3">
+        <label>Description</label>
+        <input class="form-control bg-dark text-white" @bind="@weather.Description" />
+    </div>
+    <div class="form-group mb-3">
+        <label>Humidity</label>
+        <input class="form-control bg-dark text-white" @bind="@weather.Humidity" />
+    </div>
+    <button class="btn btn-primary bg-dark text-white" @onclick="CaptureWeatherInfo">Save</button>
+</form>
+<table class="table-cus mt-3">
+
+    <thead class="thead">
+    <tr>
+        <th>
+            Temperature
+        </th>
+
+        <th>
+            Conditions
+        </th>
+        <th>
+            Description
+        </th>
+        <th>
+            Humidity
+        </th>
+        <th>
+            Saved on
+        </th>
+                               
+    </tr>
+    </thead>
+
+    <tbody>
+    @if (allEntries.Count() > 1)
+    {
+        @foreach (WeatherDTO entry in allEntries)
+        {
+            <tr>
+                <td>
+                    @entry.Temperature °C
+                </td>
+
+                <td>
+                    @entry.Conditions
+                </td>
+                <td>
+                    @entry.Description
+                </td>
+                <td>
+                    @entry.Humidity %
+                </td>
+                <td>
+                    @entry.TimeStamp.ToString("g")
+                </td>
+                                       
+            </tr>
+        }
+    }
+    else
+    {
+        <td>
+            No records found
+        </td>
+    }
+
+    </tbody>
+</table>
+<a class="btn btn-primary mt-2" @onclick="WriteToCsv"><ion-icon class="me-3" name="download-outline"></ion-icon>Download records</a>
+
+@code {
+
+    IEnumerable<WeatherDTO> allEntries = new List<WeatherDTO>();
+
+    WeatherDTO weather = new WeatherDTO();
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        allEntries = await WeatherService.GetAllWeatherInfoUser();
+    }
+
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ExecuteJavaScript();
+        }
+    }
+
+    private async Task ExecuteJavaScript()
+    {
+        await JSRuntime.InvokeVoidAsync("getCurrentPosition");
+    }
+
+    public async Task CaptureWeatherInfo()
+    {
+        weather.Id = Guid.NewGuid().ToString();
+        weather.TimeStamp = DateTime.Now;
+        await WeatherService.AddWeatherInfo(weather);
+        await WeatherService.SaveChanges();
+        allEntries = await WeatherService.GetAllWeatherInfoUser();
+        StateHasChanged();
+    }
+
+
+    public async Task WriteToCsv()
+    {
+        try
+        {
+            allEntries = await WeatherService.GetAllWeatherInfoUser();
+            if (allEntries != null && allEntries.Any())
+            {
+                await using var memoryStream = new MemoryStream();
+                await using var writer = new StreamWriter(memoryStream);
+                await using var csv = new CsvWriter(writer, CultureInfo.InvariantCulture);
+                csv.WriteHeader<WeatherDTO>();
+                await csv.NextRecordAsync();
+                foreach (var entry in allEntries)
+                {
+                    csv.WriteRecord(entry);
+                    await csv.NextRecordAsync();
+                }
+                await writer.FlushAsync();
+                memoryStream.Seek(0, SeekOrigin.Begin);
+                var data = memoryStream.ToArray();
+                var contentType = "text/csv";
+                var fileName = "weatherData.csv";
+                await JSRuntime.InvokeAsync<object>("DownloadFile", fileName, contentType, data);
+            }
+            else
+            {
+                ToatService.ShowWarning("No records found");
+            }
+           
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine("Error downloading the file: " + ex.ToString());
+            ToatService.ShowError("Error occurred while performing operation");
+        }
+    }
+}
+
+
+    
+<script>
+    function getCurrentPosition() {
+        navigator.geolocation.getCurrentPosition(function (position) {
+            var latitude = position.coords.latitude;
+            var longitude = position.coords.longitude;
+            document.getElementById("latitude").value = latitude;
+            document.getElementById("longitude").value = longitude;
+        });
+    }
+</script>
+

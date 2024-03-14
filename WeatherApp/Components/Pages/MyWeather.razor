@@ -1,0 +1,337 @@
+﻿@page "/"
+@page "/weather"
+@using global::WeatherApp.Data.Models
+@using global::WeatherApp.Services.Interfaces
+@using CsvHelper
+@using System.Globalization
+
+@inject IToastService ToatService
+
+
+
+@rendermode InteractiveServer
+@inject IWeather WeatherServices
+@inject IJSRuntime JSRuntime
+
+
+<h3><ion-icon class="heading-icon" name="cloudy-night-outline"></ion-icon>Weather App</h3>
+
+<form class="form-wrapper">
+    <div class="main-map">
+        <div>
+            <div>
+                <label>Your Latitude</label>
+                <input id="latitude" class="form-control bg-dark text-white w-50" readonly/>
+
+            </div>
+            <div>
+                <label>Your Longitude</label>
+                <input id="longitude" class="form-control bg-dark text-white w-50" readonly/>
+            </div>
+            <a class="btn btn-primary mt-5" @onclick="GetWeatherDataFromApi"><ion-icon class="me-3" name="location-outline"></ion-icon>Get location weather</a>
+            @if (isLoading)
+            {
+                <Spinner />
+            }
+            else
+            {
+                @if (isDataloaded)
+                {
+                    <div class="main-map">
+                        <div class="grid grid-col-3">
+                            <div class="temp-card">
+                                <p class="temp-title"> <ion-icon class="me-2" name="thermometer-outline"></ion-icon>Temperature</p>
+                                <p class="temp">
+                                    @weatherData.main.temp °C
+                                </p>
+                            </div>
+
+                            <div class="temp-card">
+                                <p class="temp-title"><ion-icon class="me-3" name="cloudy-night-outline"></ion-icon>Conditions</p>
+                                <p class="temp">
+                                    @weatherData.weather[0].main
+                                </p>
+                            </div>
+                            <div class="temp-card">
+                                <p class="temp-title"><ion-icon class="me-3" name="cloudy-outline"></ion-icon>Description</p>
+                                <p class="temp">
+                                    @weatherData.weather[0].description
+                                </p>
+                            </div>
+                            <div class="temp-card">
+                                <p class="temp-title"><ion-icon class="me-3" name="water-outline"></ion-icon>Humidity</p>
+                                <p class="temp">
+                                    @weatherData.main.humidity %
+                                </p>
+                            </div>
+                        </div>
+
+
+                    </div>
+
+                    <h6 class="mb-3">Weather Records</h6>
+
+                    <table class="table-cus">
+
+                        <thead class="thead">
+                            <tr>
+                                <th>
+                                    Temperature
+                                </th>
+
+                                <th>
+                                    Conditions
+                                </th>
+                                <th>
+                                    Description
+                                </th>
+                                <th>
+                                    Humidity
+                                </th>
+                                <th>
+                                    Saved on
+                                </th>
+                               
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            @if (allEntries.Count() > 1)
+                            {
+                                @foreach (WeatherDTO entry in allEntries)
+                                {
+                                    <tr>
+                                        <td>
+                                            @entry.Temperature °C
+                                        </td>
+
+                                        <td>
+                                            @entry.Conditions
+                                        </td>
+                                        <td>
+                                            @entry.Description
+                                        </td>
+                                        <td>
+                                            @entry.Humidity %
+                                        </td>
+                                        <td>
+                                            @entry.TimeStamp.ToString("g")
+                                        </td>
+                                       
+                                    </tr>
+                                }
+                            }
+                            else
+                            {
+                            <td>
+                                No records found
+                            </td>
+                            }
+
+                        </tbody>
+                    </table>
+                    <a class="btn btn-primary mt-2" @onclick="WriteToCsv"><ion-icon class="me-3" name="download-outline"></ion-icon>Download records</a>
+                }
+            }
+        </div>
+
+        <div class="map">
+            <h4><ion-icon class="me-2" name="location-outline"></ion-icon>Map Location</h4>
+            <div id="map" style="height: 300px;"></div>
+            @if (isDataloaded)
+            {
+                <a class="btn btn-primary mt-5" @onclick="CaptureWeatherData"><ion-icon class="me-3" name="save-outline"></ion-icon>Save weather information</a>
+                <a class="btn btn-primary mt-1" href="/Capture"><ion-icon class="me-3" name="create-outline"></ion-icon>Capture different weather readings</a>
+            }
+        </div>
+
+        <script>
+            (g => {
+                var h, a, k, p = "The Google Maps JavaScript API", c = "google", l = "importLibrary", q = "__ib__", m = document, b = window;
+                b = b[c] || (b[c] = {});
+                var d = b.maps || (b.maps = {}),
+                    r = new Set,
+                    e = new URLSearchParams,
+                    u = () => h ||
+                    (h = new Promise(async(f, n) => {
+                        await(a = m.createElement("script"));
+                        e.set("libraries", [...r] + "");
+                        for (k in g) e.set(k.replace(/[A-Z]/g, t => "_" + t[0].toLowerCase()), g[k]);
+                        e.set("callback", c + ".maps." + q);
+                        a.src = `https://maps.${c}apis.com/maps/api/js?` + e;
+                        d[q] = f;
+                        a.onerror = () => h = n(Error(p + " could not load."));
+                        a.nonce = m.querySelector("script[nonce]")?.nonce || "";
+                        m.head.append(a)
+                    }));
+                d[l] ? console.warn(p + " only loads once. Ignoring:", g) : d[l] = (f, ...n) => r.add(f) && u().then(() => d[l](f, ...n))
+            })({
+                key: "AIzaSyD_B0d171W-vIz0d7U2q3aAfqHt_AJhqUc",
+                v: "weekly",
+            });
+
+            let map;
+
+            async function initMap() {
+                const { Map } = await google.maps.importLibrary("maps");
+
+                map = new Map(document.getElementById("map"),
+                    {
+                        center: { lat: -34.397, lng: 150.644 },
+                        zoom: 12,
+                    });
+
+                map.setCenter(new google.maps.LatLng(document.getElementById("latitude").value, document.getElementById("longitude").value));
+
+            }
+
+            initMap();
+
+        </script>
+    </div>
+</form>
+
+
+
+
+
+@code {
+    bool isDataloaded = false;
+    Weather weather = new Weather();
+    bool isLoading = false;
+    WeatherApiDTO weatherData = new WeatherApiDTO();
+    IEnumerable<WeatherDTO> allEntries = new List<WeatherDTO>();
+    WeatherDTO newEntry = new WeatherDTO();
+
+   
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ExecuteJavaScriptGetLocation();
+        }
+    }
+
+    [JSInvokable]
+    public async Task UpdateLocation(double latitude, double longitude)
+    {
+        weather.Latitude = latitude;
+        weather.Longitude = longitude;
+    }
+
+    private async Task ExecuteJavaScriptGetLocation()
+    {
+        await JSRuntime.InvokeVoidAsync("getCurrentPosition");
+    }
+
+    public async Task GetWeatherDataFromApi()
+    {
+        try
+        {
+            isLoading = true;
+            weatherData = await WeatherServices.GetLocationWeatherInfo(weather.Latitude, weather.Longitude);
+            allEntries = await WeatherServices.GetAllWeatherInfoUser();
+            isDataloaded = true;
+            isLoading = false;
+            ToatService.ShowSuccess("Location weather retried");
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("Error on GetWeatherDataFromApi method: " + e.ToString());
+            ToatService.ShowError("Error occurred while performing operation");
+        }
+       
+    }
+
+
+    public async Task CaptureWeatherData()
+    {
+        try
+        {
+            isLoading = true;
+            WeatherDTO weather = new WeatherDTO()
+            {
+                Id = Guid.NewGuid().ToString(),
+                Latitude = 0,
+                Longitude = 0,
+                Temperature = this.weatherData.main.temp,
+                FeelLikeTemp = this.weatherData.main.feels_like,
+                Conditions = this.weatherData.weather[0].main,
+                Description = this.weatherData.weather[0].description,
+                Humidity = this.weatherData.main.humidity,
+                TimeStamp = DateTime.Now,
+
+            };
+            await WeatherServices.AddWeatherInfo(weather);
+            allEntries = await WeatherServices.GetAllWeatherInfoUser();
+            isLoading = false;
+            ToatService.ShowSuccess("Weather data saved");
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("Error on CaptureData method: " + e.ToString());
+            ToatService.ShowError("Error occurred while performing operation");
+        }
+      
+    }
+
+
+    public async Task WriteToCsv()
+    {
+        try
+        {
+            allEntries = await WeatherServices.GetAllWeatherInfoUser();
+            if (allEntries != null && allEntries.Any())
+            {
+                await using var memoryStream = new MemoryStream();
+                await using var writer = new StreamWriter(memoryStream);
+                await using var csv = new CsvWriter(writer, CultureInfo.InvariantCulture);
+                csv.WriteHeader<WeatherDTO>();
+                await csv.NextRecordAsync();
+                foreach (var entry in allEntries)
+                {
+                    csv.WriteRecord(entry);
+                    await csv.NextRecordAsync();
+                }
+                await writer.FlushAsync();
+                memoryStream.Seek(0, SeekOrigin.Begin);
+                var data = memoryStream.ToArray();
+                var contentType = "text/csv";
+                var fileName = "weatherData.csv";
+                await JSRuntime.InvokeAsync<object>("DownloadFile", fileName, contentType, data);
+            }
+            else
+            {
+                ToatService.ShowWarning("No records found");
+            }
+           
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine("Error downloading the file: " + ex.ToString());
+            ToatService.ShowError("Error occurred while performing operation");
+        }
+    }
+
+}
+
+
+<script>
+    function getCurrentPosition() {
+        navigator.geolocation.getCurrentPosition(
+            function (position) {
+                var latitude = position.coords.latitude;
+                var longitude = position.coords.longitude;
+           
+                document.getElementById("latitude").value = latitude;
+                document.getElementById("longitude").value = longitude;
+
+                initMap();
+            },
+            function (error) {
+                console.error("Error getting geolocation:", error);
+            }
+        );
+    }
+</script>
